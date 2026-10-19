@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Malaria funding tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F6F3; --panel:#fff; --ink:#1B211E; --muted:#606B65; --faint:#8C958F;
+    --rule:#D9DED8; --soft:#E9ECE7;
+    --contracted:#14655A; --intended:#6B4E9E; --empty:#A9B1AB;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+       font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px;line-height:1.55}
+  .wrap{max-width:1040px;margin:0 auto;padding:30px 20px 60px}
+  h1{font-size:26px;font-weight:600;letter-spacing:-.02em;margin:0}
+  header{border-bottom:2px solid var(--ink);padding-bottom:14px;margin-bottom:22px}
+  header p{margin:7px 0 0;color:var(--muted);font-size:14px;max-width:62ch}
+  .num{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  .grid{display:flex;flex-wrap:wrap;gap:1px;background:var(--rule);border:1px solid var(--rule);margin-bottom:24px}
+  .kpi{flex:1 1 215px;min-width:200px;background:var(--panel);padding:15px 16px}
+  .kpi .v{font-size:23px;font-weight:500;line-height:1.1}
+  .kpi .l{font-size:12.5px;font-weight:500;margin-top:5px}
+  .kpi .n{font-size:11.5px;color:var(--faint);margin-top:7px;line-height:1.5}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:1px;margin-right:6px;vertical-align:middle}
+  .src{font-size:11px;color:var(--muted);display:flex;align-items:center;margin-bottom:7px}
+  nav{display:flex;gap:2px}
+  nav button{border:1px solid var(--rule);border-bottom:1px solid var(--rule);background:transparent;
+    color:var(--muted);padding:8px 15px;font-size:13px;cursor:pointer;font-family:inherit;position:relative;top:1px}
+  nav button[aria-selected="true"]{border-color:var(--ink);border-bottom-color:var(--panel);
+    background:var(--panel);color:var(--ink);font-weight:600}
+  nav button:focus-visible{outline:2px solid var(--contracted);outline-offset:2px}
+  .panel{background:var(--panel);border:1px solid var(--rule);padding:18px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:8px 10px;font-weight:600;font-size:12px;border-bottom:1.5px solid var(--ink);vertical-align:bottom}
+  th.r,td.r{text-align:right}
+  th small{display:block;font-weight:400;color:var(--faint);font-size:10.5px;margin-top:2px}
+  td{padding:9px 10px;border-bottom:1px solid var(--soft);vertical-align:top}
+  tr.row{cursor:pointer}
+  tr.row:hover td{background:var(--paper)}
+  .none{color:var(--empty);font-size:12px;font-style:italic}
+  .na{color:var(--faint);font-size:12px}
+  .down{color:#A33A2B}
+  .moved{color:var(--intended);font-size:11.5px}
+  .detail td{background:var(--paper)}
+  .cols{display:flex;flex-wrap:wrap;gap:26px}
+  .col{flex:1 1 250px}
+  .col h4{font-size:12px;margin:0 0 7px;padding-bottom:5px;border-bottom:1px solid var(--rule)}
+  .kv{display:flex;justify-content:space-between;gap:12px;padding:4px 0;font-size:12.5px}
+  .kv span:first-child{color:var(--muted)}
+  .note{margin:15px 0 0;font-size:12.5px;border-left:2px solid var(--rule);padding-left:11px;max-width:66ch}
+  .bar{height:15px;background:var(--contracted);display:inline-block;vertical-align:middle;min-width:1px}
+  .legend{display:flex;flex-wrap:wrap;gap:18px;background:var(--panel);border:1px solid var(--rule);padding:16px 18px;margin-bottom:22px}
+  .legend>div{flex:1 1 210px;min-width:195px}
+  .legend p{margin:4px 0 0;font-size:12px;color:var(--muted);line-height:1.5}
+  .foot{font-size:11px;color:var(--faint);margin-top:16px;line-height:1.6}
+  label.filter{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .toolbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="data.js"></script>
+
+<script type="text/babel">
+const {useState, useMemo} = React;
+const D = window.TRACKER_DATA;
+
+const BASIS = {
+  contracted:{label:"Contracted", c:"var(--contracted)",
+    n:"Board-approved allocation or appropriation. Firm, but an envelope, not cash."},
+  intended:{label:"Intended", c:"var(--intended)",
+    n:"Stated intent against future appropriations. Directional only."},
+  empty:{label:"Not published", c:"var(--empty)",
+    n:"The donor has not disclosed this. It does not mean zero."}
+};
+
+const money = (v, ccy) => {
+  if (v == null) return null;
+  const s = ccy === "EUR" ? "\u20AC" : "$";
+  return v >= 1e9 ? `${s}${(v/1e9).toFixed(2)}bn` : `${s}${Math.round(v/1e6)}m`;
+};
+
+// A figure the source hedged is never shown bare.
+//   floor -> ">=" , cap -> "<="
+const bound = (c) => c.floor ? "\u2265" : c.cap ? "\u2264" : "";
+
+const signed = (v, pct) => {
+  if (v == null) return null;
+  const s = v < 0 ? "\u2212" : "+";
+  const m = Math.abs(v);
+  const a = m >= 1e9 ? `${s}$${(m/1e9).toFixed(2)}bn` : `${s}$${Math.round(m/1e6)}m`;
+  return pct == null ? a : `${a} (${s}${Math.abs(pct).toFixed(1)}%)`;
+};
+
+const Dot = ({b}) => <span className="dot" style={{background:BASIS[b].c}} />;
+const None = ({t}) => <span className="none">{t || "not published"}</span>;
+
+function Countries(){
+  const [open,setOpen] = useState(null);
+  const [mouOnly,setMouOnly] = useState(false);
+  const [malOnly,setMalOnly] = useState(false);
+  const [lens,setLens] = useState("all");
+
+  const rows = useMemo(()=>{
+    const r = D.countries.filter(c => (mouOnly ? c.signed : true) && (malOnly ? c.gfMalaria : true));
+    const key = c => (malOnly||lens==="malaria" ? c.gfMalaria : c.gfTotal);
+    return r.slice().sort((a,b)=>{
+      const x=key(a), y=key(b);
+      if (x && y) return y - x;
+      if (x) return -1;
+      if (y) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  },[mouOnly,malOnly,lens]);
+
+  // Every row is in USD now: euro grants carry the Global Fund's own converted figure.
+  const maxUsd = Math.max(...D.countries
+    .map(c => (lens==="malaria" ? c.gfMalaria : c.gfTotal) || 0));
+
+  const withFigure = D.countries.filter(c=>c.mouUs!=null).length;
+  const mal = lens==="malaria";
+  const now  = c => mal ? c.gfMalaria   : c.gfTotal;
+  const then = c => mal ? c.gc7Malaria  : c.gc7Total;
+  const chg  = c => mal ? c.gfMalChange : c.gfChange;
+  const pctc = c => mal ? c.gfMalChangePct : c.gfChangePct;
+
+  return (
+    <>
+      <div className="toolbar">
+        <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
+          <label className="filter">
+            <input type="checkbox" checked={mouOnly} onChange={e=>setMouOnly(e.target.checked)} />
+            Signed US agreement
+          </label>
+          <label className="filter">
+            <input type="checkbox" checked={malOnly} onChange={e=>setMalOnly(e.target.checked)} />
+            Has a malaria allocation
+          </label>
+          <label className="filter">
+            Show
+            <select value={lens} onChange={e=>setLens(e.target.value)}
+                    style={{font:"inherit",fontSize:12.5,padding:"2px 5px",
+                            border:"1px solid var(--rule)",background:"var(--panel)",
+                            color:"var(--ink)"}}>
+              <option value="all">all components</option>
+              <option value="malaria">malaria only</option>
+            </select>
+          </label>
+        </div>
+        <div style={{fontSize:12,color:"var(--muted)"}}>
+          {rows.length} rows · {rows.filter(c=>c.gfMalaria).length} with a malaria allocation · {withFigure} with a published US figure
+        </div>
+      </div>
+
+      <div style={{overflowX:"auto"}}>
+      <table>
+        <thead><tr>
+          <th>Country</th>
+          <th className="r">GC8<small>{mal?"malaria only, USD":"all components, USD"}</small></th>
+          <th className="r">{mal?"Country total":"Of which malaria"}<small>{mal?"all components, USD":"USD"}</small></th>
+          <th className="r">GC7<small>as communicated</small></th>
+          <th className="r">Change<small>GC8 vs GC7</small></th>
+          <th className="r">US agreement<small>FY26\u201330, intended</small></th>
+          <th className="r">vs FY21\u201325<small>US funding only</small></th>
+          <th className="r">Malaria named<small>in the agreement</small></th>
+        </tr></thead>
+        <tbody>
+        {rows.map(c=>{
+          const isOpen = open===c.name;
+          return (
+            <React.Fragment key={c.name}>
+              <tr className="row" onClick={()=>setOpen(isOpen?null:c.name)}>
+                <td style={{fontWeight:500}}>{c.name}</td>
+                <td className="r">
+                  {now(c) ? <>
+                    <span className="bar" style={{width:Math.max(2,(now(c)/maxUsd)*60)}} />
+                    <span className="num" style={{marginLeft:7}}>{money(now(c))}</span>
+                    {c.gfCcy==="EUR" && <span className="na" style={{marginLeft:5}}>&euro;</span>}
+                  </> : <span className="na">{mal?"not eligible":"none"}</span>}
+                </td>
+                <td className="r">
+                  {mal
+                    ? (c.gfTotal
+                        ? <span className="num">{money(c.gfTotal)}</span>
+                        : <span className="na">&mdash;</span>)
+                    : (c.gfMalaria
+                        ? <span className="num">{money(c.gfMalaria)}</span>
+                        : <span className="na">not eligible</span>)}
+                </td>
+                <td className="r">
+                  {then(c)
+                    ? <span className="num">{money(then(c))}</span>
+                    : <span className="na">&mdash;</span>}
+                </td>
+                <td className="r">
+                  {c.movedTo
+                    ? <span className="moved">moved to programme</span>
+                    : chg(c)!=null
+                      ? <span className={"num"+(chg(c)<0?" down":"")}>
+                          {signed(chg(c), pctc(c))}</span>
+                      : <span className="na">&mdash;</span>}
+                </td>
+                <td className="r">
+                  {c.mouUs!=null
+                    ? <span><Dot b="intended" /><span className="num">
+                        {bound(c)}{money(c.mouUs)}</span></span>
+                    : c.signed ? <None t="amount not published" />
+                    : <span className="na">no agreement</span>}
+                </td>
+                <td className="r">
+                  {c.usChange!=null
+                    ? <span className={"num"+(c.usChange<0?" down":"")}>
+                        {signed(c.usChange, c.usChangePct)}</span>
+                    : <span className="na">&mdash;</span>}
+                </td>
+                <td className="r">
+                  {c.malaria===true && <span style={{color:"var(--contracted)",fontSize:12.5}}>named</span>}
+                  {c.malaria===false && <span className="na">not named</span>}
+                  {c.malaria==null && c.signed && <span className="none">unstated</span>}
+                  {!c.signed && <span className="na">&mdash;</span>}
+                </td>
+              </tr>
+              {isOpen &&
+                <tr className="detail"><td colSpan={8}>
+                  <div className="cols">
+                    <div className="col">
+                      <h4>Global Fund</h4>
+                      <KV k="GC8 total" v={money(c.gfTotal)} b="contracted" />
+                      <KV k="HIV/AIDS" v={money(c.gfHiv)} b="contracted" />
+                      <KV k="Tuberculosis" v={money(c.gfTb)} b="contracted" />
+                      <KV k="Malaria" v={money(c.gfMalaria)} b="contracted" />
+                      <KV k="GC7 total" v={money(c.gc7Total)} b="contracted" />
+                      <KV k="Change, all components" v={signed(c.gfChange, c.gfChangePct)} plain />
+                      <KV k="Change, malaria" v={signed(c.gfMalChange, c.gfMalChangePct)} plain />
+                      {c.movedTo &&
+                        <KV k="GC8 status" v={"folded into "+c.movedTo} plain />}
+                      {c.exited && <KV k="GC8 status" v="no allocation" plain />}
+                      {c.gfCcy==="EUR" &&
+                        <KV k="Grant currency" v={"\u20AC"+(c.gfNative/1e6).toFixed(1)+"m"} plain />}
+                    </div>
+                    <div className="col">
+                      <h4>US bilateral agreement</h4>
+                      {c.signed ? <>
+                        <KV k="Signed" v={c.signed} plain />
+                        <KV k="Term" v={c.term ? c.term+" years" : null} plain />
+                        <KV k="MOU headline" v={money(c.mouTotal)} b="intended" />
+                        <KV k="US assistance"
+                            v={c.mouUs!=null ? bound(c)+money(c.mouUs) : null} b="intended" />
+                        <KV k="Co-investment"
+                            v={c.mouCoInvest!=null ? bound(c)+money(c.mouCoInvest) : null} b="intended" />
+                        <KV k="US, FY21\u201325 planned" v={money(c.usPrior)} b="contracted" />
+                        <KV k="Change in US funding" v={signed(c.usChange, c.usChangePct)} plain />
+                        {c.programmes &&
+                          <KV k="Programme areas" v={c.programmes.join(", ")} plain />}
+                      </> : <p style={{fontSize:12.5,color:"var(--muted)",margin:"6px 0 0"}}>
+                        No agreement signed as at {D.lastChecked}.</p>}
+                    </div>
+                  </div>
+                  {c.note && <p className="note">{c.note}</p>}
+                </td></tr>}
+            </React.Fragment>
+          );
+        })}
+        </tbody>
+      </table>
+      </div>
+
+      <p className="foot">
+        Global Fund country totals cover HIV, TB and malaria together and must not be read as
+        malaria figures; use the malaria lens or the malaria column. All Global Fund figures are in
+        USD; euro-denominated grants (marked &euro;) use the Global Fund&rsquo;s own published
+        conversion rate, not one chosen here. A leading &ge; means the source said &ldquo;over&rdquo;
+        that amount; a leading &le; means it said &ldquo;up to&rdquo; or &ldquo;nearly&rdquo;. US
+        agreement figures come from KFF, drawn from the MOU texts, except where a row says
+        otherwise. The FY21&ndash;25 comparison is planned US global health funding, so the change
+        measures commitment against prior plan, not against money spent.
+      </p>
+    </>
+  );
+}
+
+function KV({k,v,b,plain}){
+  return (
+    <div className="kv">
+      <span>{k}</span>
+      {v ? <span style={{whiteSpace:"nowrap"}}>
+             {b && <Dot b={b} />}<span className={plain?"":"num"}>{v}</span>
+           </span>
+         : <None />}
+    </div>
+  );
+}
+
+function Sources(){
+  return (
+    <>
+      <h3 style={{fontSize:15,margin:"2px 0 10px"}}>Where each field comes from</h3>
+      <table>
+        <thead><tr>
+          <th>Source</th><th>What it fills</th><th>How</th><th>Weight</th>
+        </tr></thead>
+        <tbody>
+        {D.sources.filter(s=>s.used!==false).map(s=>(
+          <tr key={s.name}>
+            <td style={{fontWeight:500,width:"20%"}}>{s.name}</td>
+            <td style={{color:"var(--muted)",fontSize:12.5}}>{s.fills}</td>
+            <td style={{color:"var(--muted)",fontSize:12}}>{s.how}</td>
+            <td><span style={{fontSize:11.5,fontWeight:600,
+              color:s.weight==="Strong"?"var(--contracted)":
+                    s.weight==="Lagging"?"#8A6A00":"var(--intended)"}}>{s.weight}</span></td>
+          </tr>
+        ))}
+        </tbody>
+      </table>
+      <h3 style={{fontSize:15,margin:"26px 0 8px"}}>Identified but not yet used</h3>
+      <p style={{fontSize:12.5,color:"var(--muted)",margin:"0 0 6px"}}>
+        {D.sources.filter(s=>s.used===false).map(s=>s.name).join(", ")}.
+        These would add disbursements, net shipments and prices paid.</p>
+      <h3 style={{fontSize:15,margin:"26px 0 8px"}}>Rules this tracker follows</h3>
+      <ol style={{fontSize:13.5,lineHeight:1.65,paddingLeft:20,margin:0}}>
+        <li style={{marginBottom:9}}>Never sum across a Global Fund allocation, a US appropriation
+          and an agreement intention. They are three different kinds of claim on future money.</li>
+        <li style={{marginBottom:9}}>Never add the US contribution to the Global Fund envelope.
+          It is already inside it.</li>
+        <li style={{marginBottom:9}}>A country total is not a malaria figure. The malaria
+          component is its own column; use that one.</li>
+        <li style={{marginBottom:9}}>Never present a hedged figure as exact. &ldquo;Nearly $2.1bn&rdquo;
+          and &ldquo;over $91m&rdquo; are bounds, not amounts, and are marked as such.</li>
+        <li style={{marginBottom:9}}>A country that vanishes between cycles has not necessarily
+          been cut. Twenty-three were folded into multicountry programmes; check the GC8 status
+          before reading a disappearance as a reduction.</li>
+        <li style={{marginBottom:9}}>Where a figure comes from another organisation&rsquo;s tracker,
+          take their published amounts and not their derived shares, and say on this tab that it
+          is theirs.</li>
+        <li>Never reuse the State Department&rsquo;s cumulative tally. It moved by roughly $3bn
+          around a single signing of about $146m, and country counts disagree between releases
+          dated the same day.</li>
+      </ol>
+    </>
+  );
+}
+
+function App(){
+  const [tab,setTab] = useState("countries");
+  return (
+    <div className="wrap">
+      <header>
+        <h1>Malaria funding tracker</h1>
+        <p>Global Fund allocations and US bilateral commitments, by country. A record of what
+           donors have published. It makes no estimates and derives no ratios.</p>
+      </header>
+
+      <div className="legend">
+        {["contracted","intended","empty"].map(k=>(
+          <div key={k}>
+            <div style={{display:"flex",alignItems:"center"}}>
+              <Dot b={k} /><span style={{fontSize:13,fontWeight:600}}>{BASIS[k].label}</span>
+            </div>
+            <p>{BASIS[k].n}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid">
+        {D.headline.map((h,i)=>(
+          <div className="kpi" key={i}>
+            <div className="src"><Dot b={h.basis} />{BASIS[h.basis].label}</div>
+            <div className="v num">{h.value}</div>
+            <div className="l">{h.label}</div>
+            <div className="n">{h.note}</div>
+          </div>
+        ))}
+      </div>
+
+      <nav role="tablist">
+        {[["countries","Countries"],["sources","Sources and rules"]].map(([k,l])=>(
+          <button key={k} role="tab" aria-selected={tab===k} onClick={()=>setTab(k)}>{l}</button>
+        ))}
+      </nav>
+      <div className="panel">
+        {tab==="countries" ? <Countries/> : <Sources/>}
+      </div>
+
+      <p className="foot">Last checked {D.lastChecked}. A blank means the figure is not published, not that it
+        is zero. To update, edit data.js.</p>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
